@@ -12,6 +12,8 @@ class UserRegister(BaseModel):
     email: EmailStr
     password: str
     name: Optional[str] = None
+    profile_image: Optional[str] = None
+    bio: Optional[str] = None
 
 
 class LoginRequest(BaseModel):
@@ -26,6 +28,14 @@ class TokenResponse(BaseModel):
 
 class ProfileUpdate(BaseModel):
     name: Optional[str]
+    bio: Optional[str]
+    profile_image: Optional[str] = None
+
+class UserProfile(BaseModel):
+    id: int
+    email: EmailStr
+    name: Optional[str]
+    profile_image: Optional[str]
     bio: Optional[str]
 
 
