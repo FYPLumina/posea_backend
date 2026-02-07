@@ -9,8 +9,7 @@ DB_CONFIG = {
     "password": "Ldr1@#45",
     "database": "posea_db"
 }
-
-POSE_DIR = "app/static/female"
+POSE_DIR = "app/static/Beach_Dataset/female"
 
 def main():
     conn = mysql.connector.connect(**DB_CONFIG)

@@ -10,7 +10,7 @@ DB_CONFIG = {
     "database": "posea_db"
 }
 
-POSE_DIR = "app/static/male"
+POSE_DIR = "app/static/Beach_Dataset/male"
 
 def main():
     conn = mysql.connector.connect(**DB_CONFIG)
