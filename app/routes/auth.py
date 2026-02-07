@@ -1,10 +1,52 @@
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi import Body
-from app.schemas import UserRegister, LoginRequest, TokenResponse, GenericResponse, ProfileUpdate, ChangePasswordRequest
-from app.services.auth_service import auth_service
+
+from fastapi import UploadFile, File, Form
+import os
+import base64
+from app.schemas import UserRegister, LoginRequest, TokenResponse, GenericResponse, ProfileUpdate, ChangePasswordRequest, UserProfile
+from app.services.auth_service import auth_service, get_db_connection
 from app.middleware.auth_middleware import get_current_user
 
+PROFILE_IMAGE_DIR = os.path.join(os.path.dirname(__file__), '../static/profile_images')
+os.makedirs(PROFILE_IMAGE_DIR, exist_ok=True)
+
 router = APIRouter()
+
+@router.get("/profile", response_model=GenericResponse)
+def get_profile(current_user: dict = Depends(get_current_user)):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT user_id, email, name, profile_image, bio FROM users WHERE user_id=%s", (current_user.get("sub"),))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        # If profile_image is set, return as base64 string
+        profile_image_b64 = None
+        if user["profile_image"]:
+            image_path = user["profile_image"]
+            # Remove leading slash and join with static dir if needed
+            if image_path.startswith("/static/"):
+                image_path = os.path.join(os.path.dirname(__file__), "..", image_path.lstrip("/"))
+            try:
+                with open(image_path, "rb") as img_file:
+                    encoded = base64.b64encode(img_file.read()).decode("utf-8")
+                    profile_image_b64 = f"data:image/png;base64,{encoded}"
+            except Exception:
+                profile_image_b64 = None
+        profile = UserProfile(
+            id=user["user_id"],
+            email=user["email"],
+            name=user["name"],
+            profile_image=profile_image_b64,
+            bio=user["bio"]
+        )
+        return {"success": True, "data": profile, "error": None}
+    finally:
+        cursor.close()
+        conn.close()
 
 
 @router.post("/register", response_model=GenericResponse)
@@ -28,9 +70,51 @@ def logout(current_user: dict = Depends(get_current_user)):
     return {"success": True, "data": True, "error": None}
 
 
+
+import base64
+
+import logging
+
 @router.put("/profile", response_model=GenericResponse)
-def update_profile(payload: ProfileUpdate = Body(...), current_user: dict = Depends(get_current_user)):
-    user = auth_service.update_profile(current_user.get("sub"), payload.dict(exclude_none=True))
+async def update_profile(
+    name: str = Form(None),
+    bio: str = Form(None),
+    file: UploadFile = File(None),
+    profile_image_base64: str = Form(None),
+    current_user: dict = Depends(get_current_user)
+):
+    logger = logging.getLogger("profile_update")
+    profile_image_path = None
+    if file:
+        filename = f"user_{current_user.get('sub')}_{file.filename}"
+        save_path = os.path.join(PROFILE_IMAGE_DIR, filename)
+        with open(save_path, "wb") as f:
+            f.write(await file.read())
+        profile_image_path = f"/static/profile_images/{filename}"
+        logger.info(f"Saved file to {save_path}, profile_image_path: {profile_image_path}")
+    elif profile_image_base64:
+        try:
+            header, b64data = profile_image_base64.split(",", 1) if "," in profile_image_base64 else (None, profile_image_base64)
+            image_data = base64.b64decode(b64data)
+            filename = f"user_{current_user.get('sub')}_profile.png"
+            save_path = os.path.join(PROFILE_IMAGE_DIR, filename)
+            with open(save_path, "wb") as f:
+                f.write(image_data)
+            profile_image_path = f"/static/profile_images/{filename}"
+            logger.info(f"Saved base64 image to {save_path}, profile_image_path: {profile_image_path}")
+        except Exception as e:
+            logger.error(f"Base64 decode error: {e}")
+            return {"success": False, "data": None, "error": f"Invalid base64 image: {str(e)}"}
+    update_data = {}
+    if name is not None:
+        update_data["name"] = name
+    if bio is not None:
+        update_data["bio"] = bio
+    if profile_image_path:
+        update_data["profile_image"] = profile_image_path
+    logger.info(f"update_data to send to update_profile: {update_data}")
+    user = auth_service.update_profile(current_user.get("sub"), update_data)
+    logger.info(f"Returned user: {user}")
     return {"success": True, "data": user, "error": None}
 
 
