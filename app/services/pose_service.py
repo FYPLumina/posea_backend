@@ -1,23 +1,43 @@
 from typing import List, Dict
 import logging
+from app.utils.db import get_db_connection
 
 logger = logging.getLogger(__name__)
 
-
 class PoseService:
-    """Interface to fetch pose suggestions. Should be implemented with persistence or external service."""
-
+    """Fetch pose suggestions from pose_library table."""
     def get_suggestions(self, tags: List[str]) -> List[Dict]:
-        # Mocked mapping from tags to poses
         logger.info(f"Fetching poses for tags: {tags}")
-        if not tags:
-            return []
-        # Example mocked poses
-        poses = [
-            {"id": "pose-001", "name": "Classic Pose", "keypoints": None, "thumbnail_url": None},
-            {"id": "pose-002", "name": "Side Angle", "keypoints": None, "thumbnail_url": None},
-        ]
-        return poses
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            # Build SQL for scene_tag and lighting_tag
+            sql = "SELECT pose_id, pose_image, description, skeleton_data, scene_tag, lighting_tag, created_at, gender, pose_image_base64 FROM pose_library"
+            params = []
+            if tags:
+                sql += " WHERE " + " OR ".join(["scene_tag = %s", "lighting_tag = %s"] * len(tags))
+                params = []
+                for tag in tags:
+                    params.extend([tag, tag])
+            sql += " LIMIT 20"
+            cursor.execute(sql, tuple(params))
+            poses = cursor.fetchall()
+            return poses
+        finally:
+            cursor.close()
+            conn.close()
+
+    def get_random_poses(self, n: int) -> List[Dict]:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            sql = "SELECT pose_id, pose_image, description, skeleton_data, scene_tag, lighting_tag, created_at, gender, pose_image_base64 FROM pose_library ORDER BY RAND() LIMIT %s"
+            cursor.execute(sql, (n,))
+            poses = cursor.fetchall()
+            return poses
+        finally:
+            cursor.close()
+            conn.close()
 
 
 pose_service = PoseService()
