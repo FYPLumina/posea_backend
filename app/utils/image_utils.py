@@ -3,8 +3,8 @@ import numpy as np
 import cv2
 
 
-ALLOWED_TYPES = {"image/jpeg", "image/png"}
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
 async def validate_image_upload(file: UploadFile) -> bytes:
@@ -12,7 +12,7 @@ async def validate_image_upload(file: UploadFile) -> bytes:
         raise HTTPException(status_code=400, detail="Invalid file type. Only JPG/PNG allowed.")
     contents = await file.read()
     if len(contents) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="File too large. Max 5MB.")
+        raise HTTPException(status_code=413, detail="File too large. Max 10MB.")
     return contents
 
 
