@@ -13,7 +13,7 @@ class AuthService:
     """Mocked auth service interface. Replace with real persistence-backed implementation."""
 
     @staticmethod
-    def issue_token(user_id: str, expires_minutes: int = 60 * 24):
+    def issue_token(user_id: str, expires_minutes: int = 60 * 24 * 90):
         to_encode = {"sub": str(user_id), "exp": datetime.utcnow() + timedelta(minutes=expires_minutes)}
         token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
         return token
