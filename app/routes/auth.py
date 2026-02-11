@@ -14,16 +14,19 @@ os.makedirs(PROFILE_IMAGE_DIR, exist_ok=True)
 
 router = APIRouter()
 
-@router.get("/profile", response_model=GenericResponse)
+# Get user profile endpoint
+@router.get("/profile", response_model=GenericResponse) 
 def get_profile(current_user: dict = Depends(get_current_user)):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
+        #sql Query to get user profile
         cursor.execute("SELECT user_id, email, name, profile_image, bio FROM users WHERE user_id=%s", (current_user.get("sub"),))
         user = cursor.fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-        # If profile_image is set, return as base64 string
+        
+        # If profile_image is set, read the image file and convert it to base64 string to include in the response. If the image file cannot be read, set profile_image to None in the response.
         profile_image_b64 = None
         if user["profile_image"]:
             image_path = user["profile_image"]
@@ -48,13 +51,14 @@ def get_profile(current_user: dict = Depends(get_current_user)):
         cursor.close()
         conn.close()
 
-
+# Register endpoint
 @router.post("/register", response_model=GenericResponse)
 def register(payload: UserRegister = Body(...)):
+    #call the register_user function from auth_service to create a new user
     user = auth_service.register_user(payload.email, payload.password, payload.name)
     return {"success": True, "data": user, "error": None}
 
-
+# Login endpoint
 @router.post("/login", response_model=GenericResponse)
 def login(payload: LoginRequest = Body(...)):
     user = auth_service.authenticate(payload.email, payload.password)
@@ -63,7 +67,7 @@ def login(payload: LoginRequest = Body(...)):
     token = auth_service.issue_token(user_id=user["id"])
     return {"success": True, "data": {"access_token": token, "token_type": "bearer"}, "error": None}
 
-
+# Logout endpoint
 @router.post("/logout", response_model=GenericResponse)
 def logout(current_user: dict = Depends(get_current_user)):
     auth_service.logout(current_user.get("sub"))
@@ -75,6 +79,7 @@ import base64
 
 import logging
 
+# Profile update endpoint
 @router.put("/profile", response_model=GenericResponse)
 async def update_profile(
     name: str = Form(None),
@@ -117,13 +122,13 @@ async def update_profile(
     logger.info(f"Returned user: {user}")
     return {"success": True, "data": user, "error": None}
 
-
+# Password change endpoint
 @router.post("/change-password", response_model=GenericResponse)
 def change_password(payload: ChangePasswordRequest = Body(...), current_user: dict = Depends(get_current_user)):
     result = auth_service.change_password(current_user.get("sub"), payload.old_password, payload.new_password)
     return {"success": True, "data": result, "error": None}
 
-
+# Account deletion endpoint
 @router.delete("/", response_model=GenericResponse)
 def delete_account(current_user: dict = Depends(get_current_user)):
     auth_service.delete_account(current_user.get("sub"))
