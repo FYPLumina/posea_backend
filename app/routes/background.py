@@ -23,6 +23,7 @@ from datetime import datetime
 #ai.py should call the classify method from ai_service to get tags for the background image. 
 #Then it should call a new method in pose_service to get pose suggestions based on those tags. 
 #The endpoint should accept either an image file upload or a base64-encoded image string. It should also save the uploaded background image to the server and store its path in the database associated with the user.
+@router.post("/suggest_poses", response_model=GenericResponse)
 async def suggest_poses_by_background(
     file: UploadFile = File(None),
     image_base64: str = Form(None),
