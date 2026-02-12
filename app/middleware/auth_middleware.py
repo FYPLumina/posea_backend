@@ -40,4 +40,20 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
     if parts[0].lower() != "bearer" or len(parts) != 2:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authorization header format")
     token = parts[1]
-    return decode_token(token)
+    payload = decode_token(token)
+    user_id = payload.get("sub")
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token")
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT is_active FROM users WHERE user_id=%s", (user_id,))
+        user = cursor.fetchone()
+        if not user or user.get("is_active") == 0:
+            cursor.execute("UPDATE users SET is_logged_in=0 WHERE user_id=%s", (user_id,))
+            conn.commit()
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user")
+    finally:
+        cursor.close()
+        conn.close()
+    return payload
