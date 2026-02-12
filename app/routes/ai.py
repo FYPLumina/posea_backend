@@ -5,7 +5,7 @@ from app.middleware.auth_middleware import get_current_user
 
 router = APIRouter()
 
-
+#classify image endpoint 
 @router.post("/classify")
 async def classify_image(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     contents = await validate_image_upload(file)

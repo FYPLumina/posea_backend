@@ -6,7 +6,7 @@ import cv2
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
-
+# Validate uploaded image file
 async def validate_image_upload(file: UploadFile) -> bytes:
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(status_code=400, detail="Invalid file type. Only JPG/PNG allowed.")
@@ -15,7 +15,7 @@ async def validate_image_upload(file: UploadFile) -> bytes:
         raise HTTPException(status_code=413, detail="File too large. Max 10MB.")
     return contents
 
-
+# Preprocess image bytes for model input
 def preprocess_image_bytes(image_bytes: bytes, target_size=(512, 512)) -> np.ndarray:
     arr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)

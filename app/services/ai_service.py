@@ -10,7 +10,7 @@ class AIService:
 
     def __init__(self, model_path: str = None):
         self.model_path = model_path
-        # In production, load model here. Keep lazy or via separate util.
+        # In a real implementation, load the TensorFlow model here and store it as an instance variable
 
     def classify(self, image_array: np.ndarray) -> List[Dict]:
         """Perform classification and return list of {tag, confidence}.
@@ -18,7 +18,7 @@ class AIService:
         This is a placeholder — integrate real TensorFlow inference in `classify`.
         """
         try:
-            # Mocked classification for demonstration
+            # Mocked classification for demonstration purposes
             h, w, _ = image_array.shape
             logger.info(f"Received image for classification: {w}x{h}")
             return [

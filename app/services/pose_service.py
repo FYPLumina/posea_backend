@@ -11,7 +11,7 @@ class PoseService:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         try:
-            # Build SQL for scene_tag and lighting_tag
+            #sql quary to fetch poses matching any of the provided tags (scene_tag or lighting_tag)
             sql = "SELECT pose_id, pose_image, description, skeleton_data, scene_tag, lighting_tag, created_at, gender, pose_image_base64 FROM pose_library"
             params = []
             if tags:
@@ -31,6 +31,7 @@ class PoseService:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         try:
+            #sql quary to fetch n random poses from pose_library
             sql = "SELECT pose_id, pose_image, description, skeleton_data, scene_tag, lighting_tag, created_at, gender, pose_image_base64 FROM pose_library ORDER BY RAND() LIMIT %s"
             cursor.execute(sql, (n,))
             poses = cursor.fetchall()

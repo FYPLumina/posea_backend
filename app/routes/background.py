@@ -19,7 +19,10 @@ import base64
 from app.utils.db import get_db_connection
 from datetime import datetime
 
-@router.post("/suggest_poses", response_model=GenericResponse)
+#suggest poses based on background image endpoint. 
+#ai.py should call the classify method from ai_service to get tags for the background image. 
+#Then it should call a new method in pose_service to get pose suggestions based on those tags. 
+#The endpoint should accept either an image file upload or a base64-encoded image string. It should also save the uploaded background image to the server and store its path in the database associated with the user.
 async def suggest_poses_by_background(
     file: UploadFile = File(None),
     image_base64: str = Form(None),
@@ -49,17 +52,17 @@ async def suggest_poses_by_background(
     else:
         raise HTTPException(status_code=400, detail="No image file or base64 provided.")
 
-    # Insert into background_image table
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        sql = "INSERT INTO background_image (user_id, file_path, upload_time) VALUES (%s, %s, %s)"
-        now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-        cursor.execute(sql, (user_id, save_path, now))
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
+    # # sql to save background image path in database
+    # conn = get_db_connection()
+    # cursor = conn.cursor()
+    # try:
+    #     sql = "INSERT INTO background_image (user_id, file_path, upload_time) VALUES (%s, %s, %s)"
+    #     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    #     cursor.execute(sql, (user_id, save_path, now))
+    #     conn.commit()
+    # finally:
+    #     cursor.close()
+    #     conn.close()
 
     try:
         img_arr = preprocess_image_bytes(contents)

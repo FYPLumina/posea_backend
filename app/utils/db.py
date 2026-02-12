@@ -5,8 +5,7 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-# Utility to get a database connection
-
+#database connection utility
 def get_db_connection():
     return mysql.connector.connect(
         host=os.environ.get("DB_HOST"),

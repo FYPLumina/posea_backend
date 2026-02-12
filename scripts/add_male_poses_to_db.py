@@ -12,6 +12,7 @@ DB_CONFIG = {
 
 POSE_DIR = "app/static/Beach_Dataset/male"
 
+# This script reads all images from the specified directory, encodes them in base64, and inserts them into the pose_library table in the database
 def main():
     conn = mysql.connector.connect(**DB_CONFIG)
     cursor = conn.cursor()
