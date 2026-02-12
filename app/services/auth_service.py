@@ -32,17 +32,33 @@ class AuthService:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         try:
-            # Check if user already exists
-            cursor.execute("SELECT user_id FROM users WHERE email=%s", (email,))
-            if cursor.fetchone():
-                raise ValueError("Email already registered")
             # Hash password
             hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-            cursor.execute(
-                "INSERT INTO users (name, email, password_hash, profile_image, bio) VALUES (%s, %s, %s, %s, %s)",
-                (name, email, hashed, profile_image, bio)
-            )
-            user_id = cursor.lastrowid
+
+            # Check if user already exists
+            cursor.execute("SELECT user_id, is_active FROM users WHERE email=%s", (email,))
+            existing_user = cursor.fetchone()
+            if existing_user:
+                if existing_user.get("is_active") == 1:
+                    raise ValueError("Email already registered")
+
+                # Reactivate inactive account and allow re-registration with same email
+                cursor.execute(
+                    """
+                    UPDATE users
+                    SET name=%s, password_hash=%s, profile_image=%s, bio=%s, is_active=1, is_logged_in=0
+                    WHERE user_id=%s
+                    """,
+                    (name, hashed, profile_image, bio, existing_user["user_id"])
+                )
+                user_id = existing_user["user_id"]
+            else:
+                cursor.execute(
+                    "INSERT INTO users (name, email, password_hash, profile_image, bio) VALUES (%s, %s, %s, %s, %s)",
+                    (name, email, hashed, profile_image, bio)
+                )
+                user_id = cursor.lastrowid
+
             conn.commit()
             return {"id": user_id, "email": email, "name": name, "profile_image": profile_image, "bio": bio}
         finally:
@@ -135,10 +151,47 @@ class AuthService:
     @staticmethod
     def delete_account(user_id: str):
         conn = get_db_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)
         try:
-            cursor.execute("UPDATE users SET is_active=0 WHERE user_id=%s", (user_id,))
+            cursor.execute("SELECT profile_image FROM users WHERE user_id=%s", (user_id,))
+            user = cursor.fetchone()
+            if not user:
+                return False
+
+            cursor.execute("SELECT file_path FROM background_image WHERE user_id=%s", (user_id,))
+            background_rows = cursor.fetchall()
+
+            cursor.execute("DELETE FROM captured_image WHERE user_id=%s", (user_id,))
+            cursor.execute("DELETE FROM pose_selection WHERE user_id=%s", (user_id,))
+            cursor.execute("DELETE FROM background_image WHERE user_id=%s", (user_id,))
+            cursor.execute("DELETE FROM users WHERE user_id=%s", (user_id,))
             conn.commit()
+
+            media_paths = []
+            if user.get("profile_image"):
+                media_paths.append(user["profile_image"])
+            for row in background_rows:
+                if row.get("file_path"):
+                    media_paths.append(row["file_path"])
+
+            app_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            project_dir = os.path.abspath(os.path.join(app_dir, ".."))
+
+            for media_path in media_paths:
+                absolute_path = media_path
+                if not os.path.isabs(absolute_path):
+                    if media_path.startswith("/static/"):
+                        absolute_path = os.path.join(app_dir, media_path.lstrip("/"))
+                    else:
+                        absolute_path = os.path.join(project_dir, media_path)
+
+                absolute_path = os.path.normpath(absolute_path)
+                try:
+                    if os.path.exists(absolute_path):
+                        os.remove(absolute_path)
+                except Exception:
+                    pass
+
             return True
         finally:
             cursor.close()
