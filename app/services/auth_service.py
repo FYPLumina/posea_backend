@@ -54,9 +54,13 @@ class AuthService:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         try:
-            cursor.execute("SELECT user_id, email, name, password_hash FROM users WHERE email=%s", (email,))
+            cursor.execute("SELECT user_id, email, name, password_hash, is_active FROM users WHERE email=%s", (email,))
             user = cursor.fetchone()
             if not user:
+                return None
+            if user.get("is_active") == 0:
+                cursor.execute("UPDATE users SET is_logged_in=0 WHERE user_id=%s", (user["user_id"],))
+                conn.commit()
                 return None
             if not bcrypt.checkpw(password.encode(), user["password_hash"].encode()):
                 return None
