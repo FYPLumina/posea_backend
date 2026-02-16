@@ -20,6 +20,28 @@ uvicorn main:app --reload --port 8000
 
 3. Test endpoints with Postman or curl. Example login/register endpoints are under `/api/auth`.
 
+Environment variables (`.env`):
+
+```env
+DB_HOST=localhost
+DB_USER=app_user
+DB_PASSWORD=your_db_password
+DB_NAME=posea_db
+
+JWT_SECRET=CHANGE_ME_FOR_PRODUCTION
+
+# Forgot/Reset password settings
+RESET_TOKEN_EXPIRY_MINUTES=15
+RESET_PASSWORD_BASE_URL=https://your-frontend/reset-password
+
+# SMTP (optional; if omitted, reset link is logged server-side for development)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your_email@example.com
+SMTP_PASSWORD=your_smtp_password
+SMTP_FROM_EMAIL=your_email@example.com
+```
+
 Notes for Google Colab testing:
 
 - Colab already provides Python and GPU; install dependencies with `pip install -r requirements.txt` in a cell.

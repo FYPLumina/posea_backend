@@ -5,7 +5,7 @@ from fastapi import Body
 from fastapi import UploadFile, File, Form
 import os
 import base64
-from app.schemas import UserRegister, LoginRequest, TokenResponse, GenericResponse, ProfileUpdate, ChangePasswordRequest, UserProfile
+from app.schemas import UserRegister, LoginRequest, TokenResponse, GenericResponse, ProfileUpdate, ChangePasswordRequest, UserProfile, ForgotPasswordRequest, ResetPasswordRequest, EmailVerificationRequest, ResendVerificationRequest
 from app.services.auth_service import auth_service, get_db_connection
 from app.middleware.auth_middleware import get_current_user
 
@@ -58,6 +58,8 @@ def register(payload: UserRegister = Body(...)):
 @router.post("/login", response_model=GenericResponse)
 def login(payload: LoginRequest = Body(...)):
     user = auth_service.authenticate(payload.email, payload.password)
+    if user and user.get("requires_verification"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Please verify your email before logging in")
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     token = auth_service.issue_token(user_id=user["id"])
@@ -122,6 +124,65 @@ async def update_profile(
 def change_password(payload: ChangePasswordRequest = Body(...), current_user: dict = Depends(get_current_user)):
     result = auth_service.change_password(current_user.get("sub"), payload.old_password, payload.new_password)
     return {"success": True, "data": result, "error": None}
+
+
+@router.post("/forgot-password", response_model=GenericResponse)
+def forgot_password(payload: ForgotPasswordRequest = Body(...)):
+    auth_service.forgot_password(payload.email)
+    return {
+        "success": True,
+        "data": {"message": "If this email exists, reset instructions have been sent."},
+        "error": None,
+    }
+
+
+@router.post("/verify-email", response_model=GenericResponse)
+def verify_email(payload: EmailVerificationRequest = Body(...)):
+    success = auth_service.verify_email(payload.token)
+    if not success:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+    return {"success": True, "data": True, "error": None}
+
+
+@router.post("/resend-verification", response_model=GenericResponse)
+def resend_verification(payload: ResendVerificationRequest = Body(...)):
+    auth_service.resend_verification(payload.email)
+    return {
+        "success": True,
+        "data": {"message": "If this email exists and is unverified, a verification email has been sent."},
+        "error": None,
+    }
+
+
+@router.post("/reset-password", response_model=GenericResponse)
+def reset_password(payload: ResetPasswordRequest = Body(...)):
+    try:
+        success = auth_service.reset_password(payload.token, payload.new_password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if not success:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
+    return {"success": True, "data": True, "error": None}
+
+
+@router.delete("/profile/image", response_model=GenericResponse)
+def remove_profile_image(current_user: dict = Depends(get_current_user)):
+    try:
+        user = auth_service.remove_profile_image(current_user.get("sub"))
+        return {"success": True, "data": user, "error": None}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.delete("/profile/bio", response_model=GenericResponse)
+def clear_bio(current_user: dict = Depends(get_current_user)):
+    try:
+        user = auth_service.clear_bio(current_user.get("sub"))
+        return {"success": True, "data": user, "error": None}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.delete("/", response_model=GenericResponse)

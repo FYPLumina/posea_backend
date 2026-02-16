@@ -43,6 +43,7 @@ Replace `<your-server-ip>` with your computer's IP address or `localhost` if tes
     "password": "your_password"
   }
   ```
+- **Note**: Email must be verified before login. Unverified users receive `403`.
 - **Response**:
   ```json
   {
@@ -119,7 +120,132 @@ Replace `<your-server-ip>` with your computer's IP address or `localhost` if tes
 
 ---
 
-### 6. Delete Account
+### 6. Forgot Password
+- **POST** `/forgot-password`
+- **Request Body**:
+  ```json
+  {
+    "email": "user@example.com"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "message": "If this email exists, reset instructions have been sent."
+    },
+    "error": null
+  }
+  ```
+
+---
+
+### 7. Verify Email
+- **POST** `/verify-email`
+- **Request Body**:
+  ```json
+  {
+    "token": "EMAIL_VERIFICATION_TOKEN"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "data": true,
+    "error": null
+  }
+  ```
+
+---
+
+### 8. Resend Verification Email
+- **POST** `/resend-verification`
+- **Request Body**:
+  ```json
+  {
+    "email": "user@example.com"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "message": "If this email exists and is unverified, a verification email has been sent."
+    },
+    "error": null
+  }
+  ```
+
+---
+
+### 9. Reset Password
+- **POST** `/reset-password`
+- **Request Body**:
+  ```json
+  {
+    "token": "RESET_TOKEN",
+    "new_password": "new_secure_password"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "data": true,
+    "error": null
+  }
+  ```
+
+---
+
+### 10. Remove Profile Image
+- **DELETE** `/profile/image`
+- **Headers**:  
+  `Authorization: Bearer <JWT_TOKEN>`
+- **Also available at**: `/api/profile/image`
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": 1,
+      "email": "user@example.com",
+      "name": "User Name",
+      "profile_image": null,
+      "bio": "My bio"
+    },
+    "error": null
+  }
+  ```
+
+---
+
+### 11. Clear Bio
+- **DELETE** `/profile/bio`
+- **Headers**:  
+  `Authorization: Bearer <JWT_TOKEN>`
+- **Also available at**: `/api/profile/bio`
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": 1,
+      "email": "user@example.com",
+      "name": "User Name",
+      "profile_image": "/static/profile_images/user_1_profile.png",
+      "bio": null
+    },
+    "error": null
+  }
+  ```
+
+---
+
+### 12. Delete Account
 - **DELETE** `/`
 - **Headers**:  
   `Authorization: Bearer <JWT_TOKEN>`
