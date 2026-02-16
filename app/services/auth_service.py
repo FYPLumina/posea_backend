@@ -31,7 +31,7 @@ VERIFY_EMAIL_BASE_URL = os.environ.get("VERIFY_EMAIL_BASE_URL", "")
 SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.sendgrid.net")
 SMTP_PORT = _parse_int_env("SMTP_PORT", 587)
 SMTP_USER = os.environ.get("SMTP_USER", "posea_mobile_app")
-SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "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")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_FROM_EMAIL = os.environ.get("SMTP_FROM_EMAIL", "luminafyp@gmail.com")
 
 logger = logging.getLogger("auth_service")
