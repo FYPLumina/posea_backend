@@ -31,4 +31,4 @@ register_exception_handlers(app)
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="192.168.8.179", port=int(os.environ.get("PORT", 8000)))
+    uvicorn.run(app, host="10.69.40.112", port=int(os.environ.get("PORT", 8000)))

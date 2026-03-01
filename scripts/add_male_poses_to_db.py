@@ -21,8 +21,8 @@ def main():
                 b64 = base64.b64encode(img_file.read()).decode("utf-8")
                 data_url = f"data:image/png;base64,{b64}"
                 cursor.execute(
-                    "INSERT INTO pose_library (pose_image_base64, gender, pose_image, description) VALUES (%s, %s, %s, %s)",
-                    (data_url, "male", filename, f"Pose for {filename}")
+                    "INSERT INTO pose_library (pose_image_base64, gender, pose_image, description, scene_tag, lighting_tag) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (data_url, "male", filename, f"Pose for {filename}", "beach", "well_lit")
                 )
     conn.commit()
     cursor.close()

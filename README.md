@@ -40,6 +40,14 @@ SMTP_PORT=587
 SMTP_USER=your_email@example.com
 SMTP_PASSWORD=your_smtp_password
 SMTP_FROM_EMAIL=your_email@example.com
+
+# Optional: map background model outputs to semantic labels
+# 1) Full ordered labels (must exactly match model output size)
+# BG_MODEL_LABELS=indoor,outdoor,well_lit,low_light,beach,city,nature,studio
+# 2) Or index-based mapping (supports partial mapping)
+# BG_MODEL_LABEL_MAP=0:indoor,1:outdoor,2:well_lit,3:low_light,4:beach,5:city,6:nature,7:studio
+# 3) Multi-label output threshold (0.0-1.0, default 0.5)
+# BG_MODEL_PRED_THRESHOLD=0.6
 ```
 
 Notes for Google Colab testing:

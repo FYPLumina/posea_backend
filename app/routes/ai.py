@@ -2,8 +2,10 @@ from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from app.utils.image_utils import validate_image_upload, preprocess_image_bytes
 from app.services.ai_service import ai_service
 from app.middleware.auth_middleware import get_current_user
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/classify")
@@ -19,5 +21,11 @@ async def classify_image(file: UploadFile = File(...), current_user: dict = Depe
     except Exception:
         # Fallback response when AI fails
         return {"success": False, "data": None, "error": "AI classification failed"}
+
+    logger.info(
+        "Classification response generated for user_id=%s, tags=%s",
+        current_user.get("sub"),
+        tags,
+    )
 
     return {"success": True, "data": {"tags": tags}, "error": None}
