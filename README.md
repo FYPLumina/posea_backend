@@ -60,4 +60,15 @@ API Overview (selected endpoints):
 - POST `/api/session/end` — end a session
 - POST `/api/session/capture` — submit capture metadata
 
+Skeleton extraction for pose library:
+
+```bash
+python scripts/extract_pose_skeleton_data.py --dry-run --only-empty-skeleton
+python scripts/extract_pose_skeleton_data.py --only-empty-skeleton
+python scripts/extract_pose_skeleton_data.py --only-empty-skeleton --pose-model-path app/models/pose_landmarker_lite.task
+```
+
+- The script reads pose images from `pose_image_base64` (or dataset file fallback),
+  extracts 33 body landmarks using MediaPipe Pose, and stores JSON in `pose_library.skeleton_data`.
+
 Security: JWT is used for token-based auth. Replace `JWT_SECRET` env var for production.

@@ -3,6 +3,7 @@ uvicorn[standard]>=0.15.0
 python-multipart>=0.0.5
 pydantic>=1.8
 opencv-python>=4.5
+mediapipe>=0.10.0
 numpy>=1.19
 tensorflow>=2.6
 python-jose>=3.3.0
