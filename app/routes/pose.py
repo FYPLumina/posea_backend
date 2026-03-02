@@ -33,13 +33,30 @@ def select_pose(
     pose_id = payload.pose_id
     user_id = current_user.get("sub")
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(dictionary=True)
     try:
+        cursor.execute(
+            "SELECT pose_id, skeleton_data FROM pose_library WHERE pose_id = %s",
+            (pose_id,),
+        )
+        pose_row = cursor.fetchone()
+        if not pose_row:
+            raise HTTPException(status_code=404, detail="Pose not found")
+
         sql = "INSERT INTO pose_selection (user_id, pose_id, selected_at) VALUES (%s, %s, %s)"
         now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         cursor.execute(sql, (user_id, pose_id, now))
         conn.commit()
-        return {"success": True, "data": {"user_id": user_id, "pose_id": pose_id, "selected_at": now}, "error": None}
+        return {
+            "success": True,
+            "data": {
+                "user_id": user_id,
+                "pose_id": pose_row["pose_id"],
+                "selected_at": now,
+                "skeleton_data": pose_row.get("skeleton_data"),
+            },
+            "error": None,
+        }
     finally:
         cursor.close()
         conn.close()
@@ -73,9 +90,6 @@ def list_poses(
 @router.post("/suggest", response_model=GenericResponse)
 def suggest_pose(payload: PoseSuggestionRequest = Body(...), current_user: dict = Depends(get_current_user)):
     poses = pose_service.get_suggestions(payload.tags)
-    if not poses:
-        # Default fallback pose
-        poses = [{"id": "default-001", "name": "Neutral Pose", "keypoints": None, "thumbnail_url": None}]
     return {"success": True, "data": {"poses": poses}, "error": None}
 
 

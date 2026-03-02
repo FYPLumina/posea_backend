@@ -4,5 +4,7 @@ python-multipart>=0.0.5
 pydantic>=1.8
 email-validator>=1.1.5
 opencv-python>=4.5
+mediapipe>=0.10.0
 numpy>=1.19
 python-jose>=3.3.0
+mysql-connector-python>=8.0.0

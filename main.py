@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
 
-from app.routes import auth, background, ai, pose, session
+from app.routes import auth, background, ai, pose, session, profile
 from app.middleware.error_handler import register_exception_handlers
 from app.logging_config import configure_logging
 
@@ -19,6 +19,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(profile.router, prefix="/api/profile", tags=["profile"])
 app.include_router(background.router, prefix="/api/background", tags=["background"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(pose.router, prefix="/api/pose", tags=["pose"])
@@ -30,4 +31,4 @@ register_exception_handlers(app)
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
+    uvicorn.run(app, host="192.168.1.8", port=int(os.environ.get("PORT", 8000)))

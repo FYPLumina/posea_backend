@@ -1,0 +1,8 @@
+beach
+sea
+horizon
+vegetation
+golden_hour
+midday
+overcast
+other_negative

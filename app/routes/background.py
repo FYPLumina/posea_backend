@@ -1,4 +1,5 @@
 import os
+import logging
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from app.utils.image_utils import validate_image_upload, preprocess_image_bytes
 
@@ -9,6 +10,7 @@ from app.schemas import GenericResponse, UploadResponse
 import random
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 
@@ -32,10 +34,10 @@ async def suggest_poses_by_background(
     os.makedirs(bg_dir, exist_ok=True)
     if file is not None:
         filename = file.filename
+        contents = await validate_image_upload(file)
         save_path = os.path.join(bg_dir, filename)
         with open(save_path, "wb") as f:
-            f.write(await file.read())
-        contents = await validate_image_upload(file)
+            f.write(contents)
     elif image_base64 is not None:
         try:
             header, b64data = image_base64.split(",", 1) if "," in image_base64 else (None, image_base64)
@@ -71,10 +73,23 @@ async def suggest_poses_by_background(
     except Exception:
         return {"success": False, "data": None, "error": "AI classification failed"}
 
-    # Extract scene and lightning tags
-    scene_tags = [t["tag"] for t in tags if "scene" in t["tag"]]
-    lightning_tags = [t["tag"] for t in tags if "light" in t["tag"] or "lighting" in t["tag"]]
-    all_tags = scene_tags + lightning_tags
+    # Extract scene and lighting tags, fallback to all model tags when no explicit match.
+    raw_tag_names = [t.get("tag", "").strip() for t in tags if isinstance(t, dict) and t.get("tag")]
+    tag_names = [tag.lower().replace("-", "_").replace(" ", "_") for tag in raw_tag_names]
+    scene_tags = [
+        tag for tag in tag_names
+        if any(token in tag for token in ["scene", "indoor", "outdoor", "beach", "city", "nature", "studio", "sea", "horizon", "vegetation"])
+    ]
+    lighting_tags = [
+        tag for tag in tag_names
+        if any(token in tag for token in ["light", "lighting", "lit", "dark", "night", "sun", "golden_hour", "midday", "overcast"])
+    ]
+    all_tags = list(dict.fromkeys(scene_tags + lighting_tags))
+    if not all_tags:
+        all_tags = tag_names
+
+    # Debug visibility for AI outputs used in pose retrieval.
+    logger.info(f"AI tags for pose suggestion: raw={raw_tag_names}, normalized={tag_names}, selected={all_tags}")
 
     # Query suitable poses
     poses = pose_service.get_suggestions(all_tags)
