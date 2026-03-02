@@ -22,6 +22,33 @@ def _parse_int_env(name: str, default: int) -> int:
     except (TypeError, ValueError):
         return default
 
+
+def _parse_smtp_ports(default_port: int = 587):
+    raw_value = os.environ.get("SMTP_PORT", str(default_port))
+    parts = [p.strip() for p in str(raw_value).split(",") if p.strip()]
+    ports = []
+    for part in parts:
+        try:
+            port = int(part)
+            if port not in ports:
+                ports.append(port)
+        except (TypeError, ValueError):
+            continue
+
+    if not ports:
+        return [default_port]
+
+    preferred = [587, 465, 25]
+    ordered = [p for p in preferred if p in ports] + [p for p in ports if p not in preferred]
+    return ordered
+
+
+def _parse_bool_env(name: str, default: bool = False) -> bool:
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default
+    return str(raw_value).strip().lower() in {"1", "true", "yes", "on"}
+
 SECRET_KEY = os.environ.get("JWT_SECRET", "CHANGE_ME_FOR_PRODUCTION")
 ALGORITHM = "HS256"
 RESET_TOKEN_EXPIRY_MINUTES = _parse_int_env("RESET_TOKEN_EXPIRY_MINUTES", 15)
@@ -33,6 +60,7 @@ SMTP_PORT = _parse_int_env("SMTP_PORT", 587)
 SMTP_USER = os.environ.get("SMTP_USER", "posea_mobile_app")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "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")
 SMTP_FROM_EMAIL = os.environ.get("SMTP_FROM_EMAIL", "luminafyp@gmail.com")
+EMAIL_DEBUG_LOG_TOKENS = _parse_bool_env("EMAIL_DEBUG_LOG_TOKENS", False)
 
 logger = logging.getLogger("auth_service")
 
@@ -91,6 +119,8 @@ class AuthService:
 
             token = AuthService._create_email_verification_token(cursor, user_id)
             conn.commit()
+
+            AuthService._log_verification_token(email, token)
 
             AuthService._send_verification_email(email, token)
             return {
@@ -419,14 +449,13 @@ class AuthService:
             f"Use the link below to verify your email address. This link expires in {EMAIL_VERIFICATION_EXPIRY_MINUTES} minutes.\n\n{verify_link}"
         )
 
-        try:
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
-                server.starttls()
-                if SMTP_USER and SMTP_PASSWORD:
-                    server.login(SMTP_USER, SMTP_PASSWORD)
-                server.send_message(msg)
-        except Exception:
-            logger.exception("Failed to send verification email to %s", email)
+        AuthService._send_email_message(msg, email, "verification")
+
+    @staticmethod
+    def _log_verification_token(email: str, token: str):
+        if not EMAIL_DEBUG_LOG_TOKENS:
+            return
+        logger.warning("[DEBUG ONLY] Verification token for %s: %s", email, token)
 
     @staticmethod
     def _send_reset_password_email(email: str, token: str):
@@ -444,14 +473,70 @@ class AuthService:
             f"Use the link below to reset your password. This link expires in {RESET_TOKEN_EXPIRY_MINUTES} minutes.\n\n{reset_link}"
         )
 
-        try:
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
-                server.starttls()
-                if SMTP_USER and SMTP_PASSWORD:
-                    server.login(SMTP_USER, SMTP_PASSWORD)
-                server.send_message(msg)
-        except Exception:
-            logger.exception("Failed to send reset password email to %s", email)
+        AuthService._send_email_message(msg, email, "reset-password")
+
+    @staticmethod
+    def _send_email_message(msg: EmailMessage, recipient_email: str, email_kind: str):
+        ports = _parse_smtp_ports(SMTP_PORT)
+        last_error = None
+
+        for port in ports:
+            for attempt in range(1, 3):
+                try:
+                    if port == 465:
+                        with smtplib.SMTP_SSL(SMTP_HOST, port, timeout=20) as server:
+                            server.ehlo()
+                            if SMTP_USER and SMTP_PASSWORD:
+                                server.login(SMTP_USER, SMTP_PASSWORD)
+                            server.send_message(msg)
+                    else:
+                        with smtplib.SMTP(SMTP_HOST, port, timeout=20) as server:
+                            server.ehlo()
+                            server.starttls()
+                            server.ehlo()
+                            if SMTP_USER and SMTP_PASSWORD:
+                                server.login(SMTP_USER, SMTP_PASSWORD)
+                            server.send_message(msg)
+
+                    logger.info(
+                        "Sent %s email to %s via %s:%s (attempt %s)",
+                        email_kind,
+                        recipient_email,
+                        SMTP_HOST,
+                        port,
+                        attempt,
+                    )
+                    return
+                except smtplib.SMTPServerDisconnected as exc:
+                    last_error = exc
+                    logger.warning(
+                        "SMTP disconnected while sending %s email to %s via %s:%s (attempt %s): %s",
+                        email_kind,
+                        recipient_email,
+                        SMTP_HOST,
+                        port,
+                        attempt,
+                        exc,
+                    )
+                except Exception as exc:
+                    last_error = exc
+                    logger.warning(
+                        "SMTP send failed for %s email to %s via %s:%s (attempt %s): %s",
+                        email_kind,
+                        recipient_email,
+                        SMTP_HOST,
+                        port,
+                        attempt,
+                        exc,
+                    )
+
+        logger.exception(
+            "Failed to send %s email to %s after trying ports %s",
+            email_kind,
+            recipient_email,
+            ports,
+            exc_info=last_error,
+        )
 
     @staticmethod
     def forgot_password(email: str):
@@ -536,6 +621,7 @@ class AuthService:
 
             token = AuthService._create_email_verification_token(cursor, user["user_id"])
             conn.commit()
+            AuthService._log_verification_token(user["email"], token)
             AuthService._send_verification_email(user["email"], token)
             return True
         finally:

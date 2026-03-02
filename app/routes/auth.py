@@ -1,8 +1,8 @@
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi import Body
 
-from fastapi import UploadFile, File, Form
+from fastapi import UploadFile
 import os
 import base64
 from app.schemas import UserRegister, LoginRequest, TokenResponse, GenericResponse, ProfileUpdate, ChangePasswordRequest, UserProfile, ForgotPasswordRequest, ResetPasswordRequest, EmailVerificationRequest, ResendVerificationRequest
@@ -79,15 +79,22 @@ import logging
 
 @router.put("/profile", response_model=GenericResponse)
 async def update_profile(
-    name: str = Form(None),
-    bio: str = Form(None),
-    file: UploadFile = File(None),
-    profile_image_base64: str = Form(None),
+    request: Request,
     current_user: dict = Depends(get_current_user)
 ):
     logger = logging.getLogger("profile_update")
+    try:
+        form = await request.form(max_part_size=10 * 1024 * 1024)
+    except Exception as exc:
+        raise HTTPException(status_code=413, detail=f"Invalid or too large multipart payload: {str(exc)}")
+
+    name = form.get("name")
+    bio = form.get("bio")
+    file = form.get("file")
+    profile_image_base64 = form.get("profile_image_base64")
+
     profile_image_path = None
-    if file:
+    if isinstance(file, UploadFile) and file.filename:
         filename = f"user_{current_user.get('sub')}_{file.filename}"
         save_path = os.path.join(PROFILE_IMAGE_DIR, filename)
         with open(save_path, "wb") as f:
