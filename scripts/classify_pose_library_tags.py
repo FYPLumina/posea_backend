@@ -1,10 +1,16 @@
 import argparse
 import base64
 import logging
+import sys
+from pathlib import Path
 from typing import Optional, Tuple
 
 import cv2
 import numpy as np
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.logging_config import configure_logging
 from app.services.ai_service import ai_service
@@ -12,6 +18,21 @@ from app.utils.db import get_db_connection
 
 SCENE_LABELS = {"beach", "sea", "horizon", "vegetation", "other_negative"}
 LIGHTING_LABELS = {"golden_hour", "midday", "overcast"}
+MULTI_TAG_CONFIDENCE_THRESHOLD = 0.0
+
+TAG_ALIASES = {
+    "goldenhour": "golden_hour",
+    "golden-hour": "golden_hour",
+    "golden hour": "golden_hour",
+    "lightning": "lighting",
+    "well_lit": "midday",
+    "well-lit": "midday",
+}
+
+
+def normalize_tag(tag: str) -> str:
+    normalized = str(tag or "").strip().lower().replace("-", "_").replace(" ", "_")
+    return TAG_ALIASES.get(normalized, normalized)
 
 
 def decode_pose_image_to_rgb(image_base64: str) -> Optional[np.ndarray]:
@@ -37,23 +58,50 @@ def decode_pose_image_to_rgb(image_base64: str) -> Optional[np.ndarray]:
 
 
 def pick_scene_and_lighting(predictions: list[dict]) -> Tuple[Optional[str], Optional[str]]:
-    scene_tag = None
-    lighting_tag = None
+    best_scene: Tuple[Optional[str], float] = (None, -1.0)
+    best_lighting: Tuple[Optional[str], float] = (None, -1.0)
+    scene_candidates: list[Tuple[str, float]] = []
+    lighting_candidates: list[Tuple[str, float]] = []
 
     for pred in predictions:
-        tag = str(pred.get("tag", "")).strip().lower().replace("-", "_").replace(" ", "_")
-        if not scene_tag and tag in SCENE_LABELS:
-            scene_tag = tag
-        if not lighting_tag and tag in LIGHTING_LABELS:
-            lighting_tag = tag
-        if scene_tag and lighting_tag:
-            break
+        tag = normalize_tag(pred.get("tag", ""))
+        confidence = float(pred.get("confidence", 0.0) or 0.0)
 
-    if not scene_tag and predictions:
-        fallback = str(predictions[0].get("tag", "")).strip().lower().replace("-", "_").replace(" ", "_")
-        scene_tag = fallback or None
+        if tag in SCENE_LABELS and confidence > best_scene[1]:
+            best_scene = (tag, confidence)
+        if tag in SCENE_LABELS and confidence >= MULTI_TAG_CONFIDENCE_THRESHOLD:
+            scene_candidates.append((tag, confidence))
 
-    return scene_tag, lighting_tag
+        if tag in LIGHTING_LABELS and confidence > best_lighting[1]:
+            best_lighting = (tag, confidence)
+        if tag in LIGHTING_LABELS and confidence >= MULTI_TAG_CONFIDENCE_THRESHOLD:
+            lighting_candidates.append((tag, confidence))
+
+    if scene_candidates:
+        dedup_scene = []
+        seen_scene = set()
+        for tag, confidence in sorted(scene_candidates, key=lambda item: item[1], reverse=True):
+            if tag in seen_scene:
+                continue
+            seen_scene.add(tag)
+            dedup_scene.append(tag)
+        scene_value = ",".join(dedup_scene)
+    else:
+        scene_value = best_scene[0]
+
+    if lighting_candidates:
+        dedup_lighting = []
+        seen_lighting = set()
+        for tag, confidence in sorted(lighting_candidates, key=lambda item: item[1], reverse=True):
+            if tag in seen_lighting:
+                continue
+            seen_lighting.add(tag)
+            dedup_lighting.append(tag)
+        lighting_value = ",".join(dedup_lighting)
+    else:
+        lighting_value = best_lighting[0]
+
+    return scene_value, lighting_value
 
 
 def classify_and_update(limit: Optional[int], only_empty_tags: bool, dry_run: bool) -> None:

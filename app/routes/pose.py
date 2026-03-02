@@ -73,9 +73,6 @@ def list_poses(
 @router.post("/suggest", response_model=GenericResponse)
 def suggest_pose(payload: PoseSuggestionRequest = Body(...), current_user: dict = Depends(get_current_user)):
     poses = pose_service.get_suggestions(payload.tags)
-    if not poses:
-        # Default fallback pose
-        poses = [{"id": "default-001", "name": "Neutral Pose", "keypoints": None, "thumbnail_url": None}]
     return {"success": True, "data": {"poses": poses}, "error": None}
 
 
