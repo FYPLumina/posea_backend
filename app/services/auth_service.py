@@ -63,6 +63,7 @@ RESET_TOKEN_EXPIRY_MINUTES = _parse_int_env("RESET_TOKEN_EXPIRY_MINUTES", 15)
 RESET_PASSWORD_BASE_URL = os.environ.get("RESET_PASSWORD_BASE_URL", "")
 EMAIL_VERIFICATION_EXPIRY_MINUTES = _parse_int_env("EMAIL_VERIFICATION_EXPIRY_MINUTES", 1440)
 VERIFY_EMAIL_BASE_URL = os.environ.get("VERIFY_EMAIL_BASE_URL", "")
+EMAIL_VERIFICATION_OTP_LENGTH = _parse_int_env("EMAIL_VERIFICATION_OTP_LENGTH", 6)
 SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.sendgrid.net")
 SMTP_PORT = _parse_int_env("SMTP_PORT", 587)
 SMTP_USER = os.environ.get("SMTP_USER", "")
@@ -126,12 +127,12 @@ class AuthService:
                 )
                 user_id = cursor.lastrowid
 
-            token = AuthService._create_email_verification_token(cursor, user_id)
+            otp_code = AuthService._create_email_verification_otp(cursor, user_id)
             conn.commit()
 
-            AuthService._log_verification_token(email, token)
+            AuthService._log_verification_otp(email, otp_code)
 
-            AuthService._send_verification_email(email, token)
+            AuthService._send_verification_email(email, otp_code)
             return {
                 "id": user_id,
                 "email": email,
@@ -425,9 +426,11 @@ class AuthService:
             conn.close()
 
     @staticmethod
-    def _create_email_verification_token(cursor, user_id: int) -> str:
-        token = secrets.token_urlsafe(32)
-        token_hash = hashlib.sha256(token.encode()).hexdigest()
+    def _create_email_verification_otp(cursor, user_id: int) -> str:
+        otp_length = max(4, min(8, EMAIL_VERIFICATION_OTP_LENGTH))
+        max_value = 10 ** otp_length
+        otp_code = f"{secrets.randbelow(max_value):0{otp_length}d}"
+        otp_hash = hashlib.sha256(otp_code.encode()).hexdigest()
 
         cursor.execute(
             "DELETE FROM email_verification_tokens WHERE user_id=%s OR expires_at < UTC_TIMESTAMP() OR used=1",
@@ -438,16 +441,18 @@ class AuthService:
             INSERT INTO email_verification_tokens (user_id, token_hash, expires_at, used)
             VALUES (%s, %s, DATE_ADD(UTC_TIMESTAMP(), INTERVAL %s MINUTE), 0)
             """,
-            (user_id, token_hash, EMAIL_VERIFICATION_EXPIRY_MINUTES),
+            (user_id, otp_hash, EMAIL_VERIFICATION_EXPIRY_MINUTES),
         )
-        return token
+        return otp_code
 
     @staticmethod
-    def _send_verification_email(email: str, token: str):
-        verify_link = f"{VERIFY_EMAIL_BASE_URL}?token={token}" if VERIFY_EMAIL_BASE_URL else f"token={token}"
+    def _send_verification_email(email: str, otp_code: str):
+        verify_hint = (
+            f"Use this OTP on {VERIFY_EMAIL_BASE_URL}" if VERIFY_EMAIL_BASE_URL else "Use this OTP in the app"
+        )
 
         if not SMTP_HOST or not SMTP_FROM_EMAIL:
-            logger.info("Email verification requested for %s. Verification link: %s", email, verify_link)
+            logger.info("Email verification requested for %s. OTP: %s", email, otp_code)
             return
 
         msg = EmailMessage()
@@ -455,16 +460,17 @@ class AuthService:
         msg["From"] = SMTP_FROM_EMAIL
         msg["To"] = email
         msg.set_content(
-            f"Use the link below to verify your email address. This link expires in {EMAIL_VERIFICATION_EXPIRY_MINUTES} minutes.\n\n{verify_link}"
+            f"Your email verification OTP is: {otp_code}\n\n"
+            f"{verify_hint}. This OTP expires in {EMAIL_VERIFICATION_EXPIRY_MINUTES} minutes."
         )
 
         AuthService._send_email_message(msg, email, "verification")
 
     @staticmethod
-    def _log_verification_token(email: str, token: str):
+    def _log_verification_otp(email: str, otp_code: str):
         if not EMAIL_DEBUG_LOG_TOKENS:
             return
-        logger.warning("[DEBUG ONLY] Verification token for %s: %s", email, token)
+        logger.warning("[DEBUG ONLY] Verification OTP for %s: %s", email, otp_code)
 
     @staticmethod
     def _send_reset_password_email(email: str, token: str):
@@ -636,24 +642,32 @@ class AuthService:
             conn.close()
 
     @staticmethod
-    def verify_email(token: str):
-        if not token:
+    def verify_email(email: str, otp_code: str):
+        if not email or not otp_code:
             return False
 
         AuthService._ensure_email_verification_schema()
 
-        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        otp_hash = hashlib.sha256(str(otp_code).strip().encode()).hexdigest()
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         try:
             cursor.execute(
+                "SELECT user_id, is_active, email_verified FROM users WHERE email=%s LIMIT 1",
+                (email,),
+            )
+            user_row = cursor.fetchone()
+            if not user_row or user_row.get("is_active") == 0 or user_row.get("email_verified") == 1:
+                return False
+
+            cursor.execute(
                 """
                 SELECT id, user_id
                 FROM email_verification_tokens
-                WHERE token_hash=%s AND used=0 AND expires_at > UTC_TIMESTAMP()
+                WHERE user_id=%s AND token_hash=%s AND used=0 AND expires_at > UTC_TIMESTAMP()
                 LIMIT 1
                 """,
-                (token_hash,),
+                (user_row["user_id"], otp_hash),
             )
             token_row = cursor.fetchone()
             if not token_row:
@@ -680,10 +694,10 @@ class AuthService:
             if not user or user.get("is_active") == 0 or user.get("email_verified") == 1:
                 return True
 
-            token = AuthService._create_email_verification_token(cursor, user["user_id"])
+            otp_code = AuthService._create_email_verification_otp(cursor, user["user_id"])
             conn.commit()
-            AuthService._log_verification_token(user["email"], token)
-            AuthService._send_verification_email(user["email"], token)
+            AuthService._log_verification_otp(user["email"], otp_code)
+            AuthService._send_verification_email(user["email"], otp_code)
             return True
         finally:
             cursor.close()

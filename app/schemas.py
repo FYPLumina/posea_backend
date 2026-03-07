@@ -54,7 +54,8 @@ class ResetPasswordRequest(BaseModel):
 
 
 class EmailVerificationRequest(BaseModel):
-    token: str
+    email: EmailStr
+    otp: str
 
 
 class ResendVerificationRequest(BaseModel):

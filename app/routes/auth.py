@@ -145,9 +145,9 @@ def forgot_password(payload: ForgotPasswordRequest = Body(...)):
 
 @router.post("/verify-email", response_model=GenericResponse)
 def verify_email(payload: EmailVerificationRequest = Body(...)):
-    success = auth_service.verify_email(payload.token)
+    success = auth_service.verify_email(payload.email, payload.otp)
     if not success:
-        raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+        raise HTTPException(status_code=400, detail="Invalid or expired verification OTP")
     return {"success": True, "data": True, "error": None}
 
 
@@ -156,7 +156,7 @@ def resend_verification(payload: ResendVerificationRequest = Body(...)):
     auth_service.resend_verification(payload.email)
     return {
         "success": True,
-        "data": {"message": "If this email exists and is unverified, a verification email has been sent."},
+        "data": {"message": "If this email exists and is unverified, a verification OTP has been sent."},
         "error": None,
     }
 

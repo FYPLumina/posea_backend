@@ -6,8 +6,7 @@ from app.utils.image_utils import validate_image_upload, preprocess_image_bytes
 from app.services.ai_service import ai_service
 from app.services.pose_service import pose_service
 from app.middleware.auth_middleware import get_current_user
-from app.schemas import GenericResponse, UploadResponse
-import random
+from app.schemas import GenericResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -74,6 +73,12 @@ async def suggest_poses_by_background(
     except Exception:
         return {"success": False, "data": None, "error": "AI classification failed"}
 
+    pose_model_predictions = []
+    try:
+        pose_model_predictions = ai_service.suggest_poses(img_arr, top_k=10)
+    except Exception:
+        logger.exception("Pose suggestion model inference failed. Falling back to tag-based retrieval.")
+
     # Extract scene and lighting tags, fallback to all model tags when no explicit match.
     raw_tag_names = [t.get("tag", "").strip() for t in tags if isinstance(t, dict) and t.get("tag")]
     tag_names = [tag.lower().replace("-", "_").replace(" ", "_") for tag in raw_tag_names]
@@ -89,20 +94,46 @@ async def suggest_poses_by_background(
     if not all_tags:
         all_tags = tag_names
 
+    pose_labels = [
+        row.get("tag", "").strip().lower().replace("-", "_").replace(" ", "_")
+        for row in pose_model_predictions
+        if isinstance(row, dict) and row.get("tag")
+    ]
+    pose_labels = [label for label in pose_labels if label]
+
     # Debug visibility for AI outputs used in pose retrieval.
     logger.info(f"AI tags for pose suggestion: raw={raw_tag_names}, normalized={tag_names}, selected={all_tags}")
+    logger.info(f"Pose model labels for pose suggestion: {pose_labels}")
 
-    # Query suitable poses
-    poses = pose_service.get_suggestions(all_tags, user_id=user_id, gender=gender)
+    # First preference: pose suggestion model labels. Fallback: background tags/random poses.
+    poses = []
+    if pose_labels:
+        poses = pose_service.get_suggestions_by_pose_labels(
+            pose_labels,
+            user_id=user_id,
+            gender=gender,
+            limit=20,
+        )
+
     if not poses or len(poses) < 20:
-        # Fallback: get 20 random poses
-        if hasattr(pose_service, "get_random_poses"):
-            poses = pose_service.get_suggestions([], user_id=user_id, gender=gender)
+        fallback_poses = pose_service.get_suggestions(all_tags, user_id=user_id, gender=gender)
+        if poses:
+            existing_ids = {p.get("pose_id") for p in poses if isinstance(p, dict)}
+            for candidate in fallback_poses:
+                candidate_id = candidate.get("pose_id") if isinstance(candidate, dict) else None
+                if candidate_id in existing_ids:
+                    continue
+                poses.append(candidate)
+                if candidate_id is not None:
+                    existing_ids.add(candidate_id)
+                if len(poses) >= 20:
+                    break
         else:
-            # fallback: repeat or mock
-            poses = (poses or []) * 10
-            poses = poses[:20]
-    else:
-        poses = poses[:20]
+            poses = fallback_poses
+
+    if not poses or len(poses) < 20:
+        poses = pose_service.get_random_poses(20, gender=gender)
+
+    poses = poses[:20]
 
     return {"success": True, "data": {"poses": poses}, "error": None}

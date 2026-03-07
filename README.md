@@ -34,6 +34,10 @@ JWT_SECRET=CHANGE_ME_FOR_PRODUCTION
 RESET_TOKEN_EXPIRY_MINUTES=15
 RESET_PASSWORD_BASE_URL=https://your-frontend/reset-password
 
+# Email verification OTP settings
+EMAIL_VERIFICATION_EXPIRY_MINUTES=15
+EMAIL_VERIFICATION_OTP_LENGTH=6
+
 # SMTP (optional; if omitted, reset link is logged server-side for development)
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
@@ -42,6 +46,14 @@ SMTP_PASSWORD=your_smtp_password
 SMTP_FROM_EMAIL=your_email@example.com
 # STARTTLS mode: auto (default), always, never
 SMTP_STARTTLS_MODE=auto
+
+# Optional model path overrides
+BACKGROUND_MODEL_PATH=app/models/Background_classification_model03.h5
+POSE_SUGGESTION_MODEL_PATH=app/models/pose_suggestion_model_with_10Poses.h5
+
+# Optional comma-separated labels if .labels.txt is unavailable
+# BACKGROUND_MODEL_LABELS=beach,sea,horizon,vegetation,golden_hour,midday,overcast,other_negative
+# POSE_SUGGESTION_MODEL_LABELS=pose_a,pose_b,pose_c,pose_d,pose_e,pose_f,pose_g,pose_h,pose_i,pose_j
 ```
 
 Notes for Google Colab testing:

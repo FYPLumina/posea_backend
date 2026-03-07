@@ -221,6 +221,94 @@ class PoseService:
             cursor.close()
             conn.close()
 
+    def get_suggestions_by_pose_labels(
+        self,
+        pose_labels: List[str],
+        user_id: str = None,
+        avoid_recent_limit: int = 20,
+        gender: str = None,
+        limit: int = 20,
+    ) -> List[Dict]:
+        normalized_labels = self._normalize_tags(pose_labels)
+        normalized_gender = self._normalize_requested_gender(gender)
+        if not normalized_labels:
+            return []
+
+        logger.info(
+            f"Fetching poses for pose-label predictions: {pose_labels} "
+            f"normalized={normalized_labels} gender={normalized_gender or 'any'}"
+        )
+
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            excluded_pose_ids = self._get_recent_pose_ids(cursor, user_id, avoid_recent_limit)
+
+            score_terms = []
+            where_terms = []
+            score_params = []
+            where_params = []
+
+            for label in normalized_labels:
+                like_raw = f"%{label}%"
+                like_spaced = f"%{label.replace('_', ' ')}%"
+                like_image = f"%{label.replace('_', '')}%"
+
+                score_terms.extend([
+                    "CASE WHEN REPLACE(LOWER(description), '-', '_') LIKE %s THEN 6 ELSE 0 END",
+                    "CASE WHEN REPLACE(LOWER(description), ' ', '_') LIKE %s THEN 5 ELSE 0 END",
+                    "CASE WHEN LOWER(description) LIKE %s THEN 4 ELSE 0 END",
+                    "CASE WHEN LOWER(pose_image) LIKE %s THEN 2 ELSE 0 END",
+                ])
+                where_terms.extend([
+                    "REPLACE(LOWER(description), '-', '_') LIKE %s",
+                    "REPLACE(LOWER(description), ' ', '_') LIKE %s",
+                    "LOWER(description) LIKE %s",
+                    "LOWER(pose_image) LIKE %s",
+                ])
+
+                score_params.extend([like_raw, like_raw, like_spaced, like_image])
+                where_params.extend([like_raw, like_raw, like_spaced, like_image])
+
+            sql = f"""
+                SELECT
+                    pose_id,
+                    pose_image,
+                    description,
+                    skeleton_data,
+                    scene_tag,
+                    lighting_tag,
+                    created_at,
+                    gender,
+                    pose_image_base64,
+                    ({" + ".join(score_terms)}) AS match_score
+                FROM pose_library
+                WHERE {" OR ".join(where_terms)}
+            """
+            params = score_params + where_params
+
+            if normalized_gender:
+                if normalized_gender == "unisex":
+                    sql += " AND LOWER(gender) = %s"
+                    params.append("unisex")
+                else:
+                    sql += " AND LOWER(gender) IN (%s, %s)"
+                    params.extend([normalized_gender, "unisex"])
+
+            if excluded_pose_ids:
+                placeholders = ", ".join(["%s"] * len(excluded_pose_ids))
+                sql += f" AND pose_id NOT IN ({placeholders})"
+                params.extend(list(excluded_pose_ids))
+
+            sql += " ORDER BY match_score DESC, RAND(), created_at DESC LIMIT %s"
+            params.append(limit)
+
+            cursor.execute(sql, tuple(params))
+            return cursor.fetchall()
+        finally:
+            cursor.close()
+            conn.close()
+
     def get_random_poses(self, n: int, exclude_pose_ids: set = None, gender: str = None) -> List[Dict]:
         normalized_gender = self._normalize_requested_gender(gender)
         conn = get_db_connection()

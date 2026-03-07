@@ -146,7 +146,8 @@ Replace `<your-server-ip>` with your computer's IP address or `localhost` if tes
 - **Request Body**:
   ```json
   {
-    "token": "EMAIL_VERIFICATION_TOKEN"
+    "email": "user@example.com",
+    "otp": "123456"
   }
   ```
 - **Response**:
@@ -178,6 +179,8 @@ Replace `<your-server-ip>` with your computer's IP address or `localhost` if tes
     "error": null
   }
   ```
+
+- **Note**: The resend endpoint sends a fresh OTP code to email. Use that OTP with `/verify-email`.
 
 ---
 
