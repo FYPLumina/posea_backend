@@ -40,6 +40,8 @@ SMTP_PORT=587
 SMTP_USER=your_email@example.com
 SMTP_PASSWORD=your_smtp_password
 SMTP_FROM_EMAIL=your_email@example.com
+# STARTTLS mode: auto (default), always, never
+SMTP_STARTTLS_MODE=auto
 ```
 
 Notes for Google Colab testing:

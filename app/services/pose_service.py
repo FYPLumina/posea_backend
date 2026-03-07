@@ -15,6 +15,29 @@ TAG_ALIASES = {
 class PoseService:
     """Fetch pose suggestions from pose_library table."""
 
+    def _normalize_requested_gender(self, value: str) -> str:
+        gender = str(value or "").strip().lower()
+        if gender in {"male", "female", "unisex"}:
+            return gender
+        return ""
+
+    def _get_recent_pose_ids(self, cursor, user_id: str, limit: int) -> set:
+        if not user_id or limit <= 0:
+            return set()
+
+        cursor.execute(
+            """
+            SELECT pose_id
+            FROM pose_selection
+            WHERE user_id = %s
+            ORDER BY selected_at DESC
+            LIMIT %s
+            """,
+            (user_id, limit),
+        )
+        rows = cursor.fetchall() or []
+        return {row.get("pose_id") for row in rows if row.get("pose_id") is not None}
+
     def _normalize_tags(self, tags: List[str]) -> List[str]:
         normalized: List[str] = []
         seen = set()
@@ -66,11 +89,12 @@ class PoseService:
         cursor.execute(sql, tuple(params))
         return cursor.fetchall()
 
-    def _balance_genders(self, poses: List[Dict], cursor) -> List[Dict]:
+    def _balance_genders(self, poses: List[Dict], cursor, exclude_pose_ids: set = None) -> List[Dict]:
         if not poses:
             return poses
 
-        pose_ids = {row.get("pose_id") for row in poses if row.get("pose_id") is not None}
+        pose_ids = set(exclude_pose_ids or set())
+        pose_ids.update({row.get("pose_id") for row in poses if row.get("pose_id") is not None})
         females = [row for row in poses if self._normalize_gender(row.get("gender")) == "female"]
         males = [row for row in poses if self._normalize_gender(row.get("gender")) == "male"]
         others = [
@@ -99,16 +123,31 @@ class PoseService:
         balanced.extend(others)
         return balanced
 
-    def get_suggestions(self, tags: List[str]) -> List[Dict]:
+    def get_suggestions(
+        self,
+        tags: List[str],
+        user_id: str = None,
+        avoid_recent_limit: int = 20,
+        gender: str = None,
+    ) -> List[Dict]:
         normalized_tags = self._normalize_tags(tags)
-        logger.info(f"Fetching poses for tags: {tags} normalized={normalized_tags}")
-
-        if not normalized_tags:
-            return self.get_random_poses(20)
+        normalized_gender = self._normalize_requested_gender(gender)
+        logger.info(
+            f"Fetching poses for tags: {tags} normalized={normalized_tags} gender={normalized_gender or 'any'}"
+        )
 
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         try:
+            excluded_pose_ids = self._get_recent_pose_ids(cursor, user_id, avoid_recent_limit)
+
+            if not normalized_tags:
+                return self.get_random_poses(
+                    20,
+                    exclude_pose_ids=excluded_pose_ids,
+                    gender=normalized_gender,
+                )
+
             score_terms = []
             where_terms = []
             score_params = []
@@ -144,25 +183,73 @@ class PoseService:
                     ({" + ".join(score_terms)}) AS match_score
                 FROM pose_library
                 WHERE {" OR ".join(where_terms)}
-                ORDER BY match_score DESC, created_at DESC
             """
             params = score_params + where_params
+
+            if normalized_gender:
+                if normalized_gender == "unisex":
+                    sql += " AND LOWER(gender) = %s"
+                    params.append("unisex")
+                else:
+                    sql += " AND LOWER(gender) IN (%s, %s)"
+                    params.extend([normalized_gender, "unisex"])
+
+            if excluded_pose_ids:
+                placeholders = ", ".join(["%s"] * len(excluded_pose_ids))
+                sql += f" AND pose_id NOT IN ({placeholders})"
+                params.extend(list(excluded_pose_ids))
+
+            sql += " ORDER BY match_score DESC, RAND(), created_at DESC"
+
             cursor.execute(sql, tuple(params))
             poses = cursor.fetchall()
             if poses:
-                return self._balance_genders(poses, cursor)
+                if normalized_gender:
+                    return poses
+                return self._balance_genders(poses, cursor, exclude_pose_ids=excluded_pose_ids)
 
-            return self._balance_genders(self.get_random_poses(20), cursor)
+            random_poses = self.get_random_poses(
+                20,
+                exclude_pose_ids=excluded_pose_ids,
+                gender=normalized_gender,
+            )
+            if normalized_gender:
+                return random_poses
+
+            return self._balance_genders(random_poses, cursor, exclude_pose_ids=excluded_pose_ids)
         finally:
             cursor.close()
             conn.close()
 
-    def get_random_poses(self, n: int) -> List[Dict]:
+    def get_random_poses(self, n: int, exclude_pose_ids: set = None, gender: str = None) -> List[Dict]:
+        normalized_gender = self._normalize_requested_gender(gender)
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         try:
-            sql = "SELECT pose_id, pose_image, description, skeleton_data, scene_tag, lighting_tag, created_at, gender, pose_image_base64 FROM pose_library ORDER BY RAND() LIMIT %s"
-            cursor.execute(sql, (n,))
+            sql = "SELECT pose_id, pose_image, description, skeleton_data, scene_tag, lighting_tag, created_at, gender, pose_image_base64 FROM pose_library"
+            params: List = []
+            where_clauses: List[str] = []
+
+            if normalized_gender:
+                if normalized_gender == "unisex":
+                    where_clauses.append("LOWER(gender) = %s")
+                    params.append("unisex")
+                else:
+                    where_clauses.append("LOWER(gender) IN (%s, %s)")
+                    params.extend([normalized_gender, "unisex"])
+
+            if exclude_pose_ids:
+                placeholders = ", ".join(["%s"] * len(exclude_pose_ids))
+                where_clauses.append(f"pose_id NOT IN ({placeholders})")
+                params.extend(list(exclude_pose_ids))
+
+            if where_clauses:
+                sql += " WHERE " + " AND ".join(where_clauses)
+
+            sql += " ORDER BY RAND() LIMIT %s"
+            params.append(n)
+
+            cursor.execute(sql, tuple(params))
             poses = cursor.fetchall()
             return poses
         finally:

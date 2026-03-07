@@ -77,6 +77,7 @@ class ClassificationResult(BaseModel):
 
 class PoseSuggestionRequest(BaseModel):
     tags: List[str]
+    gender: Optional[str] = None
 
 
 class PoseData(BaseModel):

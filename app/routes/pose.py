@@ -89,7 +89,11 @@ def list_poses(
 
 @router.post("/suggest", response_model=GenericResponse)
 def suggest_pose(payload: PoseSuggestionRequest = Body(...), current_user: dict = Depends(get_current_user)):
-    poses = pose_service.get_suggestions(payload.tags)
+    poses = pose_service.get_suggestions(
+        payload.tags,
+        user_id=current_user.get("sub"),
+        gender=payload.gender,
+    )
     return {"success": True, "data": {"poses": poses}, "error": None}
 
 
@@ -186,6 +190,35 @@ class SetFavouriteRequest(BaseModel):
     cap_image_id: int
     is_favourite: bool
 
+
+class DeleteCapturedImageRequest(BaseModel):
+    cap_image_id: int
+
+
+def _delete_captured_image_for_user(user_id: str, cap_image_id: int):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        sql = "DELETE FROM captured_image WHERE cap_image_id = %s AND user_id = %s"
+        cursor.execute(sql, (cap_image_id, user_id))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return {
+                "success": False,
+                "data": None,
+                "error": "Image not found or not owned by user",
+            }
+
+        return {
+            "success": True,
+            "data": {"cap_image_id": cap_image_id},
+            "error": None,
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
 @router.post("/set_favourite", response_model=GenericResponse)
 def set_captured_image_favourite(
     payload: SetFavouriteRequest = Body(...),
@@ -207,3 +240,32 @@ def set_captured_image_favourite(
     finally:
         cursor.close()
         conn.close()
+
+
+@router.delete("/captured_images/{cap_image_id}", response_model=GenericResponse)
+def delete_captured_image_by_id(
+    cap_image_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user.get("sub")
+    return _delete_captured_image_for_user(user_id, cap_image_id)
+
+
+@router.delete("/delete_captured_image", response_model=GenericResponse)
+def delete_captured_image_with_query(
+    cap_image_id: int = Query(...),
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user.get("sub")
+    return _delete_captured_image_for_user(user_id, cap_image_id)
+
+
+@router.post("/delete_captured_image", response_model=GenericResponse)
+@router.post("/delete_captured_images", response_model=GenericResponse)
+@router.post("/remove_captured_image", response_model=GenericResponse)
+def delete_captured_image_with_post(
+    payload: DeleteCapturedImageRequest = Body(...),
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user.get("sub")
+    return _delete_captured_image_for_user(user_id, payload.cap_image_id)
