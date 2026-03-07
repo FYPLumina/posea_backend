@@ -6,6 +6,7 @@ import bcrypt
 import hashlib
 import secrets
 import smtplib
+import ssl
 from email.message import EmailMessage
 import logging
 from app.utils.db import get_db_connection
@@ -49,6 +50,13 @@ def _parse_bool_env(name: str, default: bool = False) -> bool:
         return default
     return str(raw_value).strip().lower() in {"1", "true", "yes", "on"}
 
+
+def _parse_tls_mode(name: str, default: str = "auto") -> str:
+    value = str(os.environ.get(name, default)).strip().lower()
+    if value in {"auto", "always", "never"}:
+        return value
+    return default
+
 SECRET_KEY = os.environ.get("JWT_SECRET", "CHANGE_ME_FOR_PRODUCTION")
 ALGORITHM = "HS256"
 RESET_TOKEN_EXPIRY_MINUTES = _parse_int_env("RESET_TOKEN_EXPIRY_MINUTES", 15)
@@ -57,9 +65,10 @@ EMAIL_VERIFICATION_EXPIRY_MINUTES = _parse_int_env("EMAIL_VERIFICATION_EXPIRY_MI
 VERIFY_EMAIL_BASE_URL = os.environ.get("VERIFY_EMAIL_BASE_URL", "")
 SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.sendgrid.net")
 SMTP_PORT = _parse_int_env("SMTP_PORT", 587)
-SMTP_USER = os.environ.get("SMTP_USER", "posea_mobile_app")
-SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "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")
-SMTP_FROM_EMAIL = os.environ.get("SMTP_FROM_EMAIL", "luminafyp@gmail.com")
+SMTP_USER = os.environ.get("SMTP_USER", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+SMTP_FROM_EMAIL = os.environ.get("SMTP_FROM_EMAIL", "")
+SMTP_STARTTLS_MODE = _parse_tls_mode("SMTP_STARTTLS_MODE", "auto")
 EMAIL_DEBUG_LOG_TOKENS = _parse_bool_env("EMAIL_DEBUG_LOG_TOKENS", False)
 
 logger = logging.getLogger("auth_service")
@@ -478,6 +487,20 @@ class AuthService:
     @staticmethod
     def _send_email_message(msg: EmailMessage, recipient_email: str, email_kind: str):
         ports = _parse_smtp_ports(SMTP_PORT)
+        smtp_user = SMTP_USER
+
+        # SendGrid SMTP requires username to be exactly "apikey" when using an API key as password.
+        if SMTP_HOST.strip().lower() == "smtp.sendgrid.net" and SMTP_PASSWORD.startswith("SG.") and smtp_user != "apikey":
+            logger.warning(
+                "SMTP_USER '%s' is incompatible with SendGrid API key auth; using 'apikey' automatically.",
+                smtp_user,
+            )
+            smtp_user = "apikey"
+
+        # If only 587 is configured and it fails in this environment, try implicit SSL on 465 as fallback.
+        if ports == [587]:
+            ports = [587, 465]
+
         last_error = None
 
         for port in ports:
@@ -486,16 +509,30 @@ class AuthService:
                     if port == 465:
                         with smtplib.SMTP_SSL(SMTP_HOST, port, timeout=20) as server:
                             server.ehlo()
-                            if SMTP_USER and SMTP_PASSWORD:
-                                server.login(SMTP_USER, SMTP_PASSWORD)
+                            if smtp_user and SMTP_PASSWORD:
+                                server.login(smtp_user, SMTP_PASSWORD)
                             server.send_message(msg)
                     else:
                         with smtplib.SMTP(SMTP_HOST, port, timeout=20) as server:
                             server.ehlo()
-                            server.starttls()
-                            server.ehlo()
-                            if SMTP_USER and SMTP_PASSWORD:
-                                server.login(SMTP_USER, SMTP_PASSWORD)
+
+                            has_starttls = server.has_extn("starttls")
+                            should_starttls = SMTP_STARTTLS_MODE == "always" or (
+                                SMTP_STARTTLS_MODE == "auto" and has_starttls
+                            )
+
+                            if SMTP_STARTTLS_MODE == "always" and not has_starttls:
+                                raise RuntimeError(
+                                    f"SMTP server {SMTP_HOST}:{port} does not advertise STARTTLS"
+                                )
+
+                            if should_starttls:
+                                context = ssl.create_default_context()
+                                server.starttls(context=context)
+                                server.ehlo()
+
+                            if smtp_user and SMTP_PASSWORD:
+                                server.login(smtp_user, SMTP_PASSWORD)
                             server.send_message(msg)
 
                     logger.info(
@@ -511,6 +548,30 @@ class AuthService:
                     last_error = exc
                     logger.warning(
                         "SMTP disconnected while sending %s email to %s via %s:%s (attempt %s): %s",
+                        email_kind,
+                        recipient_email,
+                        SMTP_HOST,
+                        port,
+                        attempt,
+                        exc,
+                    )
+                except smtplib.SMTPAuthenticationError as exc:
+                    last_error = exc
+                    logger.warning(
+                        "SMTP auth failed for %s email to %s via %s:%s (attempt %s): %s. "
+                        "Check SMTP_USER/SMTP_PASSWORD (for SendGrid use username 'apikey').",
+                        email_kind,
+                        recipient_email,
+                        SMTP_HOST,
+                        port,
+                        attempt,
+                        exc,
+                    )
+                except smtplib.SMTPNotSupportedError as exc:
+                    last_error = exc
+                    logger.warning(
+                        "SMTP feature not supported for %s email to %s via %s:%s (attempt %s): %s. "
+                        "Adjust SMTP_STARTTLS_MODE (auto/always/never) for this server.",
                         email_kind,
                         recipient_email,
                         SMTP_HOST,

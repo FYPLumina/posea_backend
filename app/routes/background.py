@@ -25,6 +25,7 @@ from datetime import datetime
 async def suggest_poses_by_background(
     file: UploadFile = File(None),
     image_base64: str = Form(None),
+    gender: str = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
     user_id = current_user.get("sub")
@@ -92,11 +93,11 @@ async def suggest_poses_by_background(
     logger.info(f"AI tags for pose suggestion: raw={raw_tag_names}, normalized={tag_names}, selected={all_tags}")
 
     # Query suitable poses
-    poses = pose_service.get_suggestions(all_tags)
+    poses = pose_service.get_suggestions(all_tags, user_id=user_id, gender=gender)
     if not poses or len(poses) < 20:
         # Fallback: get 20 random poses
         if hasattr(pose_service, "get_random_poses"):
-            poses = pose_service.get_random_poses(20)
+            poses = pose_service.get_suggestions([], user_id=user_id, gender=gender)
         else:
             # fallback: repeat or mock
             poses = (poses or []) * 10
